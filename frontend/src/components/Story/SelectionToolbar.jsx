@@ -1,8 +1,12 @@
 import { useState } from "react";
 
+const MOBILE_BREAKPOINT = 640;
+
 export default function SelectionToolbar({ position, selectedText, onSubmit, onClose }) {
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const isMobile = window.innerWidth <= MOBILE_BREAKPOINT;
 
   async function handleSubmit() {
     if (!comment.trim()) return;
@@ -12,13 +16,21 @@ export default function SelectionToolbar({ position, selectedText, onSubmit, onC
     setComment("");
   }
 
-  // Position the toolbar above the selection
-  const style = {
-    position: "fixed",
-    top: Math.max(8, position.top - 140),
-    left: Math.max(8, Math.min(position.left, window.innerWidth - 340)),
-    zIndex: 1000,
-  };
+  const style = isMobile
+    ? {
+        position: "fixed",
+        bottom: 0,
+        left: 0,
+        right: 0,
+        borderRadius: "16px 16px 0 0",
+        zIndex: 1000,
+      }
+    : {
+        position: "fixed",
+        top: Math.max(8, position.top - 148),
+        left: Math.max(8, Math.min(position.left, window.innerWidth - 340)),
+        zIndex: 1000,
+      };
 
   return (
     <div className="selection-toolbar" style={style}>
@@ -31,8 +43,8 @@ export default function SelectionToolbar({ position, selectedText, onSubmit, onC
       </div>
       <textarea
         className="toolbar-input"
-        rows={2}
-        placeholder="What should change? (e.g. 'make this more tense', 'she wouldn't say this')"
+        rows={isMobile ? 3 : 2}
+        placeholder="What should change? e.g. 'more tense', 'she wouldn't say this'"
         value={comment}
         onChange={(e) => setComment(e.target.value)}
         autoFocus
@@ -42,8 +54,13 @@ export default function SelectionToolbar({ position, selectedText, onSubmit, onC
         }}
       />
       <div className="toolbar-actions">
-        <span className="toolbar-hint">⌘↵ to submit</span>
-        <button className="btn-primary btn-small" disabled={!comment.trim() || submitting} onClick={handleSubmit}>
+        {!isMobile && <span className="toolbar-hint">⌘↵ to submit</span>}
+        <button
+          className="btn-primary btn-small"
+          style={isMobile ? { flex: 1, padding: "12px" } : {}}
+          disabled={!comment.trim() || submitting}
+          onClick={handleSubmit}
+        >
           {submitting ? "Rewriting…" : "Rewrite"}
         </button>
       </div>

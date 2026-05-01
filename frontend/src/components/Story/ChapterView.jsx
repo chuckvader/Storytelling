@@ -2,10 +2,6 @@ import { useRef, useEffect, useState, useCallback } from "react";
 import SelectionToolbar from "./SelectionToolbar";
 import { api, readSSE } from "../../api";
 
-/**
- * Walk text nodes inside root and convert a DOM (node, offset) pair
- * to an integer character offset into the plain-text content.
- */
 function getTextOffset(root, targetNode, targetOffset) {
   let offset = 0;
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
@@ -17,63 +13,78 @@ function getTextOffset(root, targetNode, targetOffset) {
   return offset;
 }
 
+function captureSelection(storyDiv) {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !storyDiv) return null;
+  const range = sel.getRangeAt(0);
+  if (!storyDiv.contains(range.commonAncestorContainer)) return null;
+  const selectedText = sel.toString().trim();
+  if (!selectedText) return null;
+  const start = getTextOffset(storyDiv, range.startContainer, range.startOffset);
+  const end = getTextOffset(storyDiv, range.endContainer, range.endOffset);
+  const rect = range.getBoundingClientRect();
+  return { text: selectedText, startOffset: start, endOffset: end, rect };
+}
+
 export default function ChapterView({ story, chapter, onContentUpdated }) {
   const storyRef = useRef(null);
-  const [selection, setSelection] = useState(null); // { text, startOffset, endOffset, rect }
+  const selectionDebounce = useRef(null);
+  const [selection, setSelection] = useState(null);
   const [streaming, setStreaming] = useState(false);
-  const [streamContent, setStreamContent] = useState(null); // replacement being streamed
   const [error, setError] = useState(null);
 
-  // Write content to DOM directly to avoid React clearing browser selections
+  // Write content to DOM directly — never trigger React re-render on the text div
   useEffect(() => {
-    if (storyRef.current && chapter?.content) {
+    if (storyRef.current && chapter?.content !== undefined) {
       storyRef.current.textContent = chapter.content;
     }
   }, [chapter?.content]);
 
-  const handleMouseUp = useCallback(() => {
+  // Unified handler: works for both mouse (desktop) and touch (mobile via selectionchange)
+  const handleSelectionChange = useCallback(() => {
     if (streaming) return;
-    const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || !storyRef.current) return;
-
-    const range = sel.getRangeAt(0);
-    // Ensure the selection is within our story div
-    if (!storyRef.current.contains(range.commonAncestorContainer)) return;
-
-    const selectedText = sel.toString().trim();
-    if (!selectedText) return;
-
-    const start = getTextOffset(storyRef.current, range.startContainer, range.startOffset);
-    const end = getTextOffset(storyRef.current, range.endContainer, range.endOffset);
-    const rect = range.getBoundingClientRect();
-
-    setSelection({
-      text: selectedText,
-      startOffset: start,
-      endOffset: end,
-      rect,
-    });
+    clearTimeout(selectionDebounce.current);
+    selectionDebounce.current = setTimeout(() => {
+      const captured = captureSelection(storyRef.current);
+      if (captured) setSelection(captured);
+    }, 200); // debounce: mobile selection handles fire many events
   }, [streaming]);
+
+  // mouseup for desktop (immediate), selectionchange for mobile (debounced)
+  useEffect(() => {
+    const div = storyRef.current;
+    if (!div) return;
+    const onMouseUp = () => {
+      const captured = captureSelection(div);
+      if (captured) setSelection(captured);
+    };
+    div.addEventListener("mouseup", onMouseUp);
+    document.addEventListener("selectionchange", handleSelectionChange);
+    return () => {
+      div.removeEventListener("mouseup", onMouseUp);
+      document.removeEventListener("selectionchange", handleSelectionChange);
+      clearTimeout(selectionDebounce.current);
+    };
+  }, [handleSelectionChange]);
 
   function clearSelection() {
     window.getSelection()?.removeAllRanges();
     setSelection(null);
-    setStreamContent(null);
     setError(null);
   }
 
   async function handleRewrite(comment) {
     if (!selection) return;
+    const snap = { ...selection }; // snapshot before clearing
     setError(null);
     setStreaming(true);
-    setStreamContent("");
     setSelection(null);
     window.getSelection()?.removeAllRanges();
 
     const res = await api.editPassage(story.id, chapter.number, {
-      selected_text: selection.text,
-      start_offset: selection.startOffset,
-      end_offset: selection.endOffset,
+      selected_text: snap.text,
+      start_offset: snap.startOffset,
+      end_offset: snap.endOffset,
       comment,
     });
 
@@ -83,24 +94,19 @@ export default function ChapterView({ story, chapter, onContentUpdated }) {
       res,
       (token) => {
         replacement += token;
-        setStreamContent(replacement);
-        // Live-preview: splice the replacement into the DOM
         if (storyRef.current) {
-          const before = chapter.content.slice(0, selection.startOffset);
-          const after = chapter.content.slice(selection.endOffset);
+          const before = chapter.content.slice(0, snap.startOffset);
+          const after = chapter.content.slice(snap.endOffset);
           storyRef.current.textContent = before + replacement + after;
         }
       },
       () => {
-        // Stream done: the backend already saved the new content; reload it
         setStreaming(false);
-        setStreamContent(null);
         onContentUpdated();
       },
       (err) => {
         setError(err);
         setStreaming(false);
-        // Restore original content on error
         if (storyRef.current) storyRef.current.textContent = chapter.content;
       }
     );
@@ -119,38 +125,34 @@ export default function ChapterView({ story, chapter, onContentUpdated }) {
         )}
       </div>
 
-      {streaming && (
-        <div className="edit-indicator">Rewriting passage…</div>
-      )}
+      {streaming && <div className="edit-indicator">Rewriting passage…</div>}
       {error && (
-        <div className="error">{error} <button className="btn-small" onClick={() => setError(null)}>Dismiss</button></div>
+        <div className="error">
+          {error}
+          <button className="btn-small" onClick={() => setError(null)}>Dismiss</button>
+        </div>
       )}
 
-      <div
-        ref={storyRef}
-        className="chapter-content"
-        onMouseUp={handleMouseUp}
-      />
+      <div ref={storyRef} className="chapter-content" />
 
       {!chapter.content && !streaming && (
         <div className="chapter-placeholder">Content not yet generated.</div>
       )}
 
       {selection && (
-        <SelectionToolbar
-          position={{ top: selection.rect.top, left: selection.rect.left }}
-          selectedText={selection.text}
-          onSubmit={handleRewrite}
-          onClose={clearSelection}
-        />
-      )}
-
-      {selection && (
-        <div
-          className="selection-overlay"
-          onClick={clearSelection}
-          style={{ position: "fixed", inset: 0, zIndex: 999 }}
-        />
+        <>
+          <div
+            className="selection-overlay"
+            onClick={clearSelection}
+            style={{ position: "fixed", inset: 0, zIndex: 999 }}
+          />
+          <SelectionToolbar
+            position={{ top: selection.rect.top, left: selection.rect.left }}
+            selectedText={selection.text}
+            onSubmit={handleRewrite}
+            onClose={clearSelection}
+          />
+        </>
       )}
     </div>
   );

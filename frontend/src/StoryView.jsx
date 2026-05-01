@@ -1,15 +1,14 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { api, readSSE } from "./api";
 import ChapterSidebar from "./components/Story/ChapterSidebar";
 import ChapterView from "./components/Story/ChapterView";
 
-export default function StoryView({ storyId }) {
+export default function StoryView({ storyId, sidebarOpen, onSidebarClose }) {
   const [story, setStory] = useState(null);
   const [chapters, setChapters] = useState([]);
   const [activeChapter, setActiveChapter] = useState(null);
   const [activeChapterData, setActiveChapterData] = useState(null);
   const [generating, setGenerating] = useState(false);
-  const [streamingContent, setStreamingContent] = useState("");
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -21,7 +20,6 @@ export default function StoryView({ storyId }) {
         brief: ch.brief,
       }));
       setChapters(chaps);
-      // Auto-select the last chapter if any
       if (s.chapters.length > 0) {
         const last = s.chapters[s.chapters.length - 1];
         setActiveChapter(last.number);
@@ -32,6 +30,7 @@ export default function StoryView({ storyId }) {
 
   async function handleSelectChapter(num) {
     setActiveChapter(num);
+    onSidebarClose();
     try {
       const ch = await api.getChapter(storyId, num);
       setActiveChapterData(ch);
@@ -48,17 +47,13 @@ export default function StoryView({ storyId }) {
     });
     setActiveChapter(chapter.number);
     setActiveChapterData(chapter);
-
-    // Auto-generate immediately
+    onSidebarClose();
     await generateChapter(chapter.number);
   }
 
   async function generateChapter(num) {
     setGenerating(true);
-    setStreamingContent("");
     setError(null);
-
-    // Create a mutable chapter data object to preview while streaming
     setActiveChapterData((prev) => ({ ...prev, content: "" }));
 
     const res = await api.generateChapter(storyId, num);
@@ -68,24 +63,20 @@ export default function StoryView({ storyId }) {
       res,
       (token) => {
         accumulated += token;
-        setStreamingContent(accumulated);
         setActiveChapterData((prev) => ({ ...prev, content: accumulated }));
       },
       async () => {
         setGenerating(false);
-        setStreamingContent("");
-        // Reload the full chapter from disk to get the persisted version
         try {
           const fresh = await api.getChapter(storyId, num);
           setActiveChapterData(fresh);
-          // Update chapter title in sidebar if the LLM filled it
           if (fresh.title) {
             setChapters((prev) => prev.map((c) =>
               c.number === num ? { ...c, title: fresh.title } : c
             ));
           }
         } catch {
-          // fallback: keep what we have
+          // keep accumulated content
         }
       },
       (err) => {
@@ -96,7 +87,6 @@ export default function StoryView({ storyId }) {
   }
 
   async function handleContentUpdated() {
-    // Called after a targeted edit completes
     try {
       const fresh = await api.getChapter(storyId, activeChapter);
       setActiveChapterData(fresh);
@@ -109,12 +99,18 @@ export default function StoryView({ storyId }) {
 
   return (
     <div className="story-layout">
+      {/* Sidebar drawer overlay (mobile) */}
+      {sidebarOpen && (
+        <div className="sidebar-overlay" onClick={onSidebarClose} />
+      )}
+
       <ChapterSidebar
         story={story}
         chapters={chapters}
         activeChapter={activeChapter}
         onSelectChapter={handleSelectChapter}
         onChapterAdded={handleChapterAdded}
+        isOpen={sidebarOpen}
       />
 
       <div className="story-main">
@@ -139,8 +135,8 @@ export default function StoryView({ storyId }) {
         ) : (
           <div className="chapter-placeholder">
             {story.format === "episodic"
-              ? "Create your first chapter using the sidebar."
-              : "Set up your story using the sidebar."}
+              ? "Tap ☰ to create your first chapter."
+              : "Tap ☰ to set up your story."}
           </div>
         )}
       </div>

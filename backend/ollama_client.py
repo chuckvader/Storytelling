@@ -1,8 +1,9 @@
 import httpx
 import json
+import os
 from typing import AsyncIterator
 
-OLLAMA_BASE = "http://localhost:11434"
+OLLAMA_BASE = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 
 
 async def list_models() -> list[str]:

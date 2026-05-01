@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../../api";
 
-export default function ChapterSidebar({ story, chapters, activeChapter, onSelectChapter, onChapterAdded }) {
+export default function ChapterSidebar({ story, chapters, activeChapter, onSelectChapter, onChapterAdded, isOpen }) {
   const [showForm, setShowForm] = useState(false);
   const [brief, setBrief] = useState("");
   const [title, setTitle] = useState("");
@@ -67,7 +67,7 @@ export default function ChapterSidebar({ story, chapters, activeChapter, onSelec
   const nextNum = chapters.length + 1;
 
   return (
-    <aside className="chapter-sidebar">
+    <aside className={`chapter-sidebar${isOpen ? " open" : ""}`}>
       <div className="sidebar-header">
         <h3>{isEpisodic ? "Chapters" : "Story"}</h3>
         {isEpisodic && !showForm && (
@@ -179,3 +179,4 @@ export default function ChapterSidebar({ story, chapters, activeChapter, onSelec
     </aside>
   );
 }
+

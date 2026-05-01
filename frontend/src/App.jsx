@@ -9,6 +9,7 @@ export default function App() {
   const [storyId, setStoryId] = useState(null);
   const [stories, setStories] = useState([]);
   const [loadingStories, setLoadingStories] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     if (view === "home") {
@@ -22,11 +23,13 @@ export default function App() {
 
   function handleStoryReady(id) {
     setStoryId(id);
+    setSidebarOpen(false);
     setView("story");
   }
 
   function handleOpenStory(id) {
     setStoryId(id);
+    setSidebarOpen(false);
     setView("story");
   }
 
@@ -55,11 +58,18 @@ export default function App() {
     return (
       <div className="app">
         <header className="app-header">
-          <button className="btn-ghost" onClick={() => setView("home")}>← Stories</button>
+          <button className="btn-ghost icon-btn" onClick={() => setSidebarOpen((o) => !o)} aria-label="Toggle chapters">
+            ☰
+          </button>
+          <button className="btn-ghost" onClick={() => { setView("home"); setSidebarOpen(false); }}>← Stories</button>
           <span className="app-title">Story Writer</span>
         </header>
         <main className="app-main full">
-          <StoryView storyId={storyId} />
+          <StoryView
+            storyId={storyId}
+            sidebarOpen={sidebarOpen}
+            onSidebarClose={() => setSidebarOpen(false)}
+          />
         </main>
       </div>
     );
